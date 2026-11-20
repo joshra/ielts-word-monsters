@@ -53,6 +53,8 @@ if (LANG === "en") {
   if (loading) loading.textContent = "Getting today's 10 words ready…";
 }
 init();
+// 離線快取：註冊失敗不影響使用
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
 
 async function init() {
   try {
@@ -91,7 +93,8 @@ async function init() {
   if (idx.data?.p) S.bankIdx = idx.data.p;
   const gm0 = await store.load("game");
   if (gm0.data?.hatched) S.game.hatched = gm0.data.hatched;
-  if (gm0.data?.streak) S.game.streak = gm0.data.streak;
+  // 儲存的內容只取數字與合法日期，不直接拿來顯示
+  if (gm0.data?.streak) { const k = gm0.data.streak; S.game.streak = { count: Math.max(0, Math.floor(Number(k.count)) || 0), last: isValidDate(k.last) ? k.last : null, best: Math.max(0, Math.floor(Number(k.best)) || 0) }; }
   if (gm0.data?.badges) S.game.badges = gm0.data.badges;
   S.game.longest = gm0.data?.longest || 0;
   const mw0 = await store.load("mywords");
@@ -1178,7 +1181,7 @@ async function openDetail(w) {
   window.scrollTo(0, 0);
   const { data } = await store.load("wd_" + w);
   if (B.detail !== w) return;
-  const opens = (data?.opens || 0) + 1;
+  const opens = (Math.floor(Number(data?.opens)) || 0) + 1;
   B.wd = { opens, writes: data?.writes || {} };
   renderDetail();
   S.bankIdx[w] = 1;
@@ -1203,7 +1206,7 @@ function renderDetail() {
   const tomorrow = addDays(S.today, 1);
   const modeLine = (label, map) => {
     const l = latestRating(map);
-    return `<dt>${label}</dt><dd class="zh">${l ? L(`${RATINGS[l.rating]}（${l.date}），下次複習 ${nextReviewDate(map, tomorrow)}`, `${RATINGS[l.rating]} (${l.date}), next review ${nextReviewDate(map, tomorrow)}`) : `<span class="none">${L("尚未作答", "Not answered yet")}</span>`}</dd>`;
+    return `<dt>${label}</dt><dd class="zh">${l ? L(`${RATINGS[l.rating] ?? ""}（${esc(l.date)}），下次複習 ${esc(nextReviewDate(map, tomorrow))}`, `${RATINGS[l.rating] ?? ""} (${esc(l.date)}), next review ${esc(nextReviewDate(map, tomorrow))}`) : `<span class="none">${L("尚未作答", "Not answered yet")}</span>`}</dd>`;
   };
   const writes = B.wd ? Object.values(B.wd.writes).sort((a, b) => (a.time < b.time ? 1 : -1)) : [];
   $("#main").innerHTML = `<section class="card body" aria-label="${L("單字詳情", "Word details")}">

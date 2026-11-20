@@ -2,6 +2,8 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>詞習 Lexi</title>
 <meta name="description" content="每天十個雅思單字，八項練習，養出自己的單字怪獸。可離線使用，進度存在瀏覽器。">
@@ -307,8 +309,5 @@ h3.sub { font-size: .95rem; margin: 12px 0 6px; }
 <div class="toast" id="toast" role="alert" hidden></div>
 <noscript><p style="padding:16px">這個網頁需要開啟 JavaScript 才能使用。</p></noscript>
 <script type="module" src="app.js"></script>
-<script>
-  if ("serviceWorker" in navigator) addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
-</script>
 </body>
 </html>
