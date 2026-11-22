@@ -214,6 +214,11 @@ select { width: 100%; border: 1px solid var(--line); background: var(--surface);
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .ttag { color: var(--m1); } }
 :root[data-theme="dark"] .ttag { color: var(--m1); }
 .ttag .ico { flex: none; }
+/* 難度：三根長條，亮的根數代表等級；三級各用一個既有的語意色，深淺模式都跟著主題變 */
+.btag { display: inline-flex; align-items: center; gap: 4px; border-radius: 999px; padding: 1px 8px 1px 6px; font-size: .78rem; vertical-align: middle; white-space: nowrap; font-family: var(--sans); font-weight: 500; font-variant-numeric: tabular-nums; background: var(--bt-bg); color: var(--bt); }
+.btag.b6 { --bt: var(--good); --bt-bg: var(--good-soft); } .btag.b7 { --bt: var(--warn); --bt-bg: var(--warn-soft); } .btag.b8 { --bt: var(--bad); --bt-bg: var(--bad-soft); }
+.bico { flex: none; fill: currentColor; vertical-align: -2px; } .bico .off { opacity: .28; }
+.mw .bico { margin-left: 6px; color: var(--muted); }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .mon { --m-ink: #0c1f1b; --egg: #cfc7ad; --egg-ln: #8f8567; } }
 :root[data-theme="dark"] .mon { --m-ink: #0c1f1b; --egg: #cfc7ad; --egg-ln: #8f8567; }
 .menu.mons .mi > .pick { grid-template-columns: auto auto minmax(0, 1fr) auto; }

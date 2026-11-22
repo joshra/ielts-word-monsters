@@ -1,5 +1,5 @@
 import { localToday, isValidDate, addDays } from "./core/dates.js";
-import { groupIndex, buildMenu, swapCandidate, isValidMenu, mergeRating, posMod, nextReviewDate } from "./core/schedule.js";
+import { groupIndex, buildMenu, swapCandidate, groupsByBand, isValidMenu, mergeRating, posMod, nextReviewDate } from "./core/schedule.js";
 import { checkSubword, hintFor, longest, checkRecall, GAME_REASONS } from "./core/game.js";
 import { STEPS, STEP_IDS, TEXT_STEPS, RATINGS, MAX_TEXT, doneCount, isWordComplete, nextPendingStep, nextStep, isProtected, canRate } from "./core/training.js";
 import { deepMerge } from "./core/merge.js";
@@ -32,7 +32,7 @@ let T = null, LEX = new Map();
 const MW = { shown: 30 };
 const MAX_MYWORDS = 500;
 // 單字庫與學習紀錄的畫面狀態
-const B = { q: "", cat: "", pos: "", status: "", page: 0, detail: null, wd: null, pick: [], applyDate: null, msg: null, writeDraft: "", view: "list" };
+const B = { q: "", cat: "", band: "", pos: "", status: "", page: 0, detail: null, wd: null, pick: [], applyDate: null, msg: null, writeDraft: "", view: "list" };
 const C = { topic: null }; // 收藏頁：目前展開的屬性
 const R = { loaded: {}, shown: 14, busy: false };
 const PAGE_SIZE = 40;
@@ -100,6 +100,9 @@ async function init() {
   const mw0 = await store.load("mywords");
   if (mw0.data?.w && typeof mw0.data.w === "object" && !Array.isArray(mw0.data.w)) S.mywords = mw0.data.w;
   try { S.plain = localStorage.getItem(store.prefix + "plain") === "1"; } catch { S.plain = false; }
+  try { S.byBand = localStorage.getItem(store.prefix + "byband") === "1"; } catch { S.byBand = false; }
+  S.course.base = S.course.advanced;
+  applyOrder();
   checkBadges(false);
   try { const saved = JSON.parse(localStorage.getItem(store.prefix + "pick") || "[]"); if (Array.isArray(saved)) B.pick = saved.filter((w) => S.words[w]).slice(0, 10); } catch { /* 沒有暫存的自選清單 */ }
   const fromHash = dateFromHash(), startPage = pageFromHash();
@@ -240,6 +243,18 @@ function monsterMeta(w) {
   const line = m.stage === "unseen" ? L("還沒遇見。", "Not met yet.") : m.stage === "egg" ? L("做完八項練習就會孵化。", "It hatches when you finish all eight steps.") : m.stage === "final" ? L("連續三次複習通過，已是完全體。", "You passed three reviews in a row, so it has reached its final form.") : m.stage === "adult" ? L("複習連續通過就會變成完全體。", "Keep passing reviews in a row to reach its final form.") : L("之後某天複習時，詞義理解與造句運用都評「能獨立完成」就會進化。", "It evolves when, on a later review day, you rate both Meaning and Usage as \"Can do it alone\".");
   return `<div class="monmeta"><div>${stageTag(m)} ${topicTag(S.words[w]?.category, m.el.full)}</div>${m.hatched ? `<div>${L(`孵化 ${esc(m.hatched)} · 複習通過 ${m.passes} 次`, `Hatched ${esc(m.hatched)} · Reviews passed: ${m.passes}`)}</div>` : ""}<div>${m.wild ? L("最近一次自評還不到「能獨立完成」，下次複習通過就會回來。", "Your latest rating was below \"Can do it alone\". Pass the next review to bring it back.") : line}</div></div>`;
 }
+/** 課表順序：預設難易混合；由淺入深時依難度重新切組。 */
+function applyOrder() {
+  S.course.advanced = S.byBand ? groupsByBand(S.course.base, (w) => S.words[w]?.band) : S.course.base;
+}
+function setByBand(on) {
+  S.byBand = on;
+  try { localStorage.setItem(store.prefix + "byband", on ? "1" : "0"); } catch { /* 存不了就只影響這次 */ }
+  applyOrder();
+  if (!S.daySaved) return openDate(S.date, S.pinned);
+  renderAll();
+  toast(L("這天已經有紀錄，十個字不變。新順序從還沒練的日子開始。", "This day already has progress, so its 10 words stay. The new order applies to days you haven't started."));
+}
 function setPlain(on) {
   S.plain = on;
   try { localStorage.setItem(store.prefix + "plain", on ? "1" : "0"); } catch { /* 存不了就只影響這次 */ }
@@ -307,9 +322,10 @@ function onStorage(e) {
 function onChange(e) {
   const t = e.target;
   if (t.id === "datepick" && isValidDate(t.value)) return openDate(t.value, true);
-  if (t.id === "bcat" || t.id === "bpos" || t.id === "bstatus") { B[t.id.slice(1)] = t.value; B.page = 0; return renderBankResults(); }
+  if (t.id === "bcat" || t.id === "bband" || t.id === "bpos" || t.id === "bstatus") { B[t.id.slice(1)] = t.value; B.page = 0; return renderBankResults(); }
   if (t.id === "bdate") { B.applyDate = t.value; B.msg = null; return renderPick(); }
   if (t.id === "plain") return setPlain(t.checked);
+  if (t.id === "byband") return setByBand(t.checked);
   if (t.dataset?.pickw) return togglePick(t.dataset.pickw, t.checked);
 }
 
@@ -420,7 +436,8 @@ function select(word, step) {
 
 async function swapWord(w) {
   if (isProtected(tr(w), S.day.game?.[w])) return toast(L("這個字已經有練習紀錄，不能換掉。", "This word already has practice saved, so it can't be swapped."));
-  const cand = swapCandidate({ date: S.date, groups: S.course.advanced, startDate: S.course.startDate, menu: S.day.wordIds, excluded: S.day.swapped || [] });
+  const harder = Math.min((S.words[w]?.band ?? 7) + 1, 8); // 換字是因為太簡單，先找更難的；已經是最高級就找同級
+  const cand = swapCandidate({ date: S.date, groups: S.course.advanced, startDate: S.course.startDate, menu: S.day.wordIds, excluded: S.day.swapped || [], prefer: (x) => (S.words[x]?.band ?? 7) >= harder });
   if (!cand) return toast(L("沒有可以換的字了。", "There are no other words to swap in."));
   const wordIds = S.day.wordIds.map((x) => (x === w ? cand : x));
   const swapped = [...(S.day.swapped || []), w];
@@ -812,8 +829,8 @@ function renderMenu() {
       const canSwap = !isProtected(tr(w), S.day.game?.[w]) && !(sel && hide);
       const avatar = !mons ? "" : sel && hide ? eggSvg({ cracks: 0, size: 30 }) : monsterHtml(w, 30, { cracks: n });
       return `<li class="mi ${sel ? "sel" : ""} ${n === 8 ? "full" : ""}">
-        <button class="pick" data-act="word" data-w="${esc(w)}" ${sel ? 'aria-current="true"' : ""}><span class="no">${String(i + 1).padStart(2, "0")}</span>${avatar}<span class="mw">${label}</span><span class="mc" aria-label="${L(`完成 ${n} 項，共 8 項`, `${n} of 8 steps done`)}">${n}/8</span></button>
-        ${canSwap ? `<button class="swap" data-act="swap" data-w="${esc(w)}" aria-label="${L(`太簡單，把 ${esc(w)} 換成另一個進階詞`, `Too easy: swap ${esc(w)} for another advanced word`)}">${L("換字", "Swap")}</button>` : ""}
+        <button class="pick" data-act="word" data-w="${esc(w)}" ${sel ? 'aria-current="true"' : ""}><span class="no">${String(i + 1).padStart(2, "0")}</span>${avatar}<span class="mw">${label}${bandIcon(S.words[w]?.band, 16, true)}</span><span class="mc" aria-label="${L(`完成 ${n} 項，共 8 項`, `${n} of 8 steps done`)}">${n}/8</span></button>
+        ${canSwap ? `<button class="swap" data-act="swap" data-w="${esc(w)}" aria-label="${L(`太簡單，把 ${esc(w)} 換成更難的字`, `Too easy: swap ${esc(w)} for a harder word`)}">${L("換字", "Swap")}</button>` : ""}
       </li>`;
     }).join("")}</ol>`;
 }
@@ -825,13 +842,13 @@ function renderHead() {
   const slot = L(`第 ${String(S.day.wordIds.indexOf(w) + 1).padStart(2, "0")} 詞 · 已完成 ${n}/8`, `Word ${String(S.day.wordIds.indexOf(w) + 1).padStart(2, "0")} · ${n}/8 done`);
   if (masked()) {
     const showZh = S.step !== "listen";
-    el.innerHTML = `<div class="head"><div><p class="slot">${slot}</p><h2 class="hw masked">${L("英文先藏起來，作答後再顯示", "The English is hidden until you answer")}</h2>${showZh ? `<p class="gloss"><b>${esc(info.pos)}</b>${esc(info.zh)}</p>` : ""}</div></div>`;
+    el.innerHTML = `<div class="head"><div><p class="slot">${slot} ${bandTag(info.band)}</p><h2 class="hw masked">${L("英文先藏起來，作答後再顯示", "The English is hidden until you answer")}</h2>${showZh ? `<p class="gloss"><b>${esc(info.pos)}</b>${esc(info.zh)}</p>` : ""}</div></div>`;
     return;
   }
   const m = monsterOf(w);
   const mon = S.plain ? "" : `<div class="monhead">${monsterHtml(w, 72, { cracks: n, label: L(`${w} 的怪獸，${STAGE_LABELS[m.stage]}`, `Monster for ${w}, ${STAGE_LABELS[m.stage]}`) })}<div class="monmeta"><div>${stageTag(m)}</div><div>${topicTag(S.words[w]?.category)}${m.hatched ? L(` · 孵化 ${esc(m.hatched)}`, ` · Hatched ${esc(m.hatched)}`) : ""}</div></div></div>`;
   el.innerHTML = `<div class="head">
-    <div><p class="slot">${slot}</p><h2 class="hw" lang="en">${esc(w)}</h2><p class="gloss"><b>${esc(info.pos)}</b>${esc(info.zh)}</p></div>
+    <div><p class="slot">${slot} ${bandTag(info.band)}</p><h2 class="hw" lang="en">${esc(w)}</h2><p class="gloss"><b>${esc(info.pos)}</b>${esc(info.zh)}</p></div>
     <div class="row">${mon}<span class="phon" lang="en">${info.phonetic ? "/" + esc(info.phonetic) + "/" : ""}</span><button class="btn small" data-act="say" data-say="word">${L("▶ 聽發音", "▶ Listen")}</button></div>
   </div>`;
 }
@@ -1032,12 +1049,26 @@ function renderCourse() {
   const groups = S.course.advanced, now = groupIndex(S.date, S.course.startDate, groups.length);
   el.innerHTML = `<details class="course" ${S.courseOpen ? "open" : ""}><summary>${L(`課表：IELTS 進階 ${groups.length} 天`, `Course plan: IELTS advanced, ${groups.length} days`)}</summary>
     <p class="lead" style="margin-top:8px">${L(`這是預排的順序。到期複習和換字會改變實際菜單，不一定剛好 ${groups.length} 天學完 ${Object.keys(S.words).length} 個字。`, `This is the planned order. Your actual word list changes with due reviews and swaps, so covering all ${Object.keys(S.words).length} words may not take exactly ${groups.length} days.`)}</p>
+    <label class="field inline" for="byband"><input type="checkbox" id="byband" ${S.byBand ? "checked" : ""}> ${L("由淺入深：先排 Band 6 以下，再排 Band 7、Band 8 以上（只影響這個瀏覽器）", "Easier first: Band 6 or below, then Band 7, then Band 8+ (this browser only)")}</label>
     <div class="groups">${groups.map((g, i) => `<div class="group ${i === now ? "now" : ""}"><h3>${L(`第 ${String(i + 1).padStart(2, "0")} 組`, `Set ${String(i + 1).padStart(2, "0")}`)}${i === now ? L("（這一天）", " (this day)") : ""}</h3><p lang="en">${g.map(esc).join(" · ")}</p><div><button class="btn small" data-act="group" data-g="${i}">${L("開啟這天的訓練菜單", "Open this day's word list")}</button></div></div>`).join("")}</div>
   </details>`;
 }
 
 /* ---------- 我的單字庫 ---------- */
 const CATS = TOPIC_NAMES;
+/** 難度三級：words.json 的 band（6／7／8），依詞頻與考綱推估再逐詞校正，不是官方分級。 */
+const BANDS = [["6", L("Band 6 以下", "Band 6 or below")], ["7", "Band 7"], ["8", L("Band 8 以上", "Band 8+")]];
+const bandName = (b) => BANDS.find(([v]) => v === String(b))?.[1] || "";
+/** 難度圖示：三根由矮到高的長條，亮幾根就是第幾級（6＝一根、7＝兩根、8＝三根），不靠顏色也分得出來。 */
+const BAND_BARS = [[3.5, 13, 7], [9.75, 8.5, 11.5], [16, 4, 16]];
+function bandIcon(b, size = 14, label = false) {
+  const lv = Number(b) - 5;
+  if (!(lv >= 1 && lv <= 3)) return "";
+  const a11y = label ? `role="img" aria-label="${esc(bandName(b))}"` : 'aria-hidden="true"';
+  return `<svg class="bico" viewBox="0 0 24 24" width="${size}" height="${size}" ${a11y}>${label ? `<title>${esc(bandName(b))}</title>` : ""}${BAND_BARS.map(([x, y, h], i) => `<rect x="${x}" y="${y}" width="4.5" height="${h}" rx="1.5"${i < lv ? "" : ' class="off"'}/>`).join("")}</svg>`;
+}
+/** 難度標籤：圖示加名稱。 */
+const bandTag = (b) => (bandName(b) ? `<span class="btag b${esc(String(b))}">${bandIcon(b)}${esc(bandName(b))}</span>` : "");
 // 分類名稱是單字資料裡的鍵，不能改；英文介面只在顯示時換成英文名稱。
 const CAT_EN = Object.fromEntries(Object.entries(ELEMENTS).map(([c, e]) => [c, e.full]));
 const catName = (c) => L(c, CAT_EN[c] || c);
@@ -1058,6 +1089,7 @@ function bankFiltered() {
   return Object.values(S.words).filter((x) => {
     if (q && !x.word.includes(q) && !x.zh.toLowerCase().includes(q)) return false;
     if (B.cat && x.category !== B.cat) return false;
+    if (B.band && String(x.band) !== B.band) return false;
     if (B.pos && !x.pos.split(" / ").includes(B.pos)) return false;
     if (B.status) { const st = wordStatus(x.word); if (B.status === "done" ? st === "new" : st !== B.status) return false; }
     return true;
@@ -1076,10 +1108,11 @@ function renderBank() {
       <div class="filters">
         <label class="field" for="bq">${L("搜尋英文或中文", "Search in English or Chinese")}<input type="text" id="bq" value="${esc(B.q)}" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
         <label class="field" for="bcat">${L("分類", "Category")}<select id="bcat">${opt("", L("全部分類", "All categories"), B.cat)}${CATS.map((c) => opt(c, catName(c), B.cat)).join("")}</select></label>
+        <label class="field" for="bband">${L("難度", "Level")}<select id="bband">${opt("", L("全部難度", "All levels"), B.band)}${BANDS.map(([v, l]) => opt(v, l, B.band)).join("")}</select></label>
         <label class="field" for="bpos">${L("詞性", "Part of speech")}<select id="bpos">${opt("", L("全部詞性", "All parts of speech"), B.pos)}${POS.map(([v, l]) => opt(v, l, B.pos)).join("")}</select></label>
         <label class="field" for="bstatus">${L("學習狀態", "Status")}<select id="bstatus">${opt("", L("全部", "All"), B.status)}${opt("new", STATUS_LABEL.new, B.status)}${opt("done", STATUS_LABEL.done, B.status)}${opt("weak", STATUS_LABEL.weak, B.status)}</select></label>
       </div>
-      <p class="lead">${L("「已練習」：做過英翻中或自主造句的自評，或在單字詳情開啟、練寫過；只按「太簡單，標記完成」不算。「待加強」：最近一次自評還不到「能獨立完成」。", "\"Practised\" means you rated yourself on To Chinese or Your sentence, or opened the word's details or wrote with it there. Just pressing \"Too easy, mark as done\" doesn't count. \"Needs work\" means your latest rating was below \"Can do it alone\".")}</p>
+      <p class="lead">${L("「已練習」：做過英翻中或自主造句的自評，或在單字詳情開啟、練寫過；只按「太簡單，標記完成」不算。「待加強」：最近一次自評還不到「能獨立完成」。難度是依詞頻推估的，不是雅思官方分級。", "\"Practised\" means you rated yourself on To Chinese or Your sentence, or opened the word's details or wrote with it there. Just pressing \"Too easy, mark as done\" doesn't count. \"Needs work\" means your latest rating was below \"Can do it alone\".")}</p>
       <div id="bres"></div>
       <label class="field inline" style="margin-top:14px" for="plain"><input type="checkbox" id="plain" ${S.plain ? "checked" : ""}> ${L("簡潔模式：不顯示怪獸與圖鑑（只影響這個瀏覽器）", "Simple mode: hide monsters and the monster collection (this browser only)")}</label>
     </section>
@@ -1121,7 +1154,7 @@ function renderBankResults() {
     <ul class="rows">${rows.map((x) => { const st = wordStatus(x.word); return `<li>
       <input type="checkbox" id="pk-${esc(x.word)}" data-pickw="${esc(x.word)}" ${B.pick.includes(x.word) ? "checked" : ""} aria-label="${L(`把 ${esc(x.word)} 加入自選十詞`, `Add ${esc(x.word)} to your 10 picks`)}">
       <button class="rowmain" data-act="bdetail" data-w="${esc(x.word)}"><span class="rw" lang="en">${esc(x.word)}</span><span class="rz"><b>${esc(x.pos)}</b> ${esc(x.zh)}</span></button>
-      <span class="rmeta">${esc(catName(x.category))}</span><span class="badge ${st}">${STATUS_LABEL[st]}</span></li>`; }).join("")}</ul>${pager}`;
+      <span class="rmeta">${esc(catName(x.category))} ${bandTag(x.band)}</span><span class="badge ${st}">${STATUS_LABEL[st]}</span></li>`; }).join("")}</ul>${pager}`;
 }
 
 /* 自選十詞 */
@@ -1210,7 +1243,7 @@ function renderDetail() {
   };
   const writes = B.wd ? Object.values(B.wd.writes).sort((a, b) => (a.time < b.time ? 1 : -1)) : [];
   $("#main").innerHTML = `<section class="card body" aria-label="${L("單字詳情", "Word details")}">
-    <div class="row"><button class="btn" data-act="bback">${S.page === "collection" ? L("‹ 回到收藏", "‹ Back to collection") : L("‹ 回到單字庫", "‹ Back to word bank")}</button><span class="badge ${wordStatus(w)}">${STATUS_LABEL[wordStatus(w)]}</span></div>
+    <div class="row"><button class="btn" data-act="bback">${S.page === "collection" ? L("‹ 回到收藏", "‹ Back to collection") : L("‹ 回到單字庫", "‹ Back to word bank")}</button><span class="badge ${wordStatus(w)}">${STATUS_LABEL[wordStatus(w)]}</span>${bandTag(x.band)}</div>
     ${S.plain ? "" : `<div class="note dexcard">${monsterHtml(w, 128, { silhouette: monsterOf(w).stage === "unseen", label: L(`${w} 的怪獸`, `Monster for ${w}`) })}${monsterMeta(w)}</div>`}
     <div class="head"><div><h2 class="hw" lang="en">${esc(w)}</h2><p class="gloss"><b>${esc(x.pos)}</b>${esc(x.zh)}</p></div>
       <div class="row"><span class="phon" lang="en">${x.phonetic ? "/" + esc(x.phonetic) + "/" : ""}</span><button class="btn small" data-act="bsay" data-t="word">${L("▶ 聽發音", "▶ Listen")}</button></div></div>
