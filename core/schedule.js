@@ -42,7 +42,7 @@ export function mergeRating(dayMap, date, rating) {
   return prev === undefined || prev === null ? rating : Math.min(prev, rating);
 }
 
-/** 沒有快照時排出當日十詞：到期詞在前（越早到期越優先），其餘依循環詞序補足。 */
+/** 沒有快照時排出當日十詞：到期詞先佔名額（越早到期越優先），剩下的名額依循環詞序補新字。排出來的順序是新字在前、複習在後。 */
 export function buildMenu({ date, groups, startDate, history, size = 10 }) {
   const pool = cyclicPool(groups, groupIndex(date, startDate, groups.length));
   const rank = new Map(pool.map((w, i) => [w, i]));
@@ -52,13 +52,13 @@ export function buildMenu({ date, groups, startDate, history, size = 10 }) {
     if (d && d <= date) due.push([d, rank.get(w), w]);
   }
   due.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : a[1] - b[1]));
-  const menu = [];
-  for (const [, , w] of due) if (menu.length < size && !menu.includes(w)) menu.push(w);
+  const review = due.slice(0, size).map((x) => x[2]);
+  const fresh = [];
   for (const w of pool) {
-    if (menu.length >= size) break;
-    if (!menu.includes(w)) menu.push(w);
+    if (fresh.length + review.length >= size) break;
+    if (!review.includes(w)) fresh.push(w);
   }
-  return menu;
+  return [...fresh, ...review];
 }
 
 /** 換字候選：依當日循環詞序，取第一個不在菜單、也沒被換掉過的詞。有 prefer 時先找符合的，找不到才退回一般順序。沒有則回傳 null。 */

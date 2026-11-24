@@ -71,7 +71,7 @@ button:disabled { cursor: not-allowed; opacity: .5; }
 .btn.small { min-height: 32px; padding: 3px 10px; font-size: .85rem; }
 .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 
-.layout { display: grid; grid-template-columns: minmax(0, 300px) minmax(0, 1fr); gap: 18px; align-items: start; }
+.layout { display: grid; grid-template-columns: minmax(0, 320px) minmax(0, 1fr); gap: 18px; align-items: start; }
 @media (max-width: 860px) { .layout { grid-template-columns: minmax(0, 1fr); } }
 .card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 16px; min-width: 0; }
 
@@ -80,7 +80,7 @@ button:disabled { cursor: not-allowed; opacity: .5; }
 .menuhead .tally { font-variant-numeric: tabular-nums; color: var(--brand); font-weight: 600; }
 .level { font-size: .82rem; color: var(--muted); margin-bottom: 10px; }
 .menu { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
-@media (max-width: 860px) { .menu { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); } }
+@media (max-width: 860px) { .menu { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); } }
 .mi { display: flex; align-items: stretch; gap: 4px; min-width: 0; }
 .mi > .pick { flex: 1; min-width: 0; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 8px; text-align: left; border: 1px solid transparent; background: var(--sunken); border-radius: 10px; padding: 7px 10px; min-height: 42px; }
 .mi > .pick .no { font-size: .78rem; color: var(--muted); font-variant-numeric: tabular-nums; }
@@ -218,7 +218,7 @@ select { width: 100%; border: 1px solid var(--line); background: var(--surface);
 .btag { display: inline-flex; align-items: center; gap: 4px; border-radius: 999px; padding: 1px 8px 1px 6px; font-size: .78rem; vertical-align: middle; white-space: nowrap; font-family: var(--sans); font-weight: 500; font-variant-numeric: tabular-nums; background: var(--bt-bg); color: var(--bt); }
 .btag.b6 { --bt: var(--good); --bt-bg: var(--good-soft); } .btag.b7 { --bt: var(--warn); --bt-bg: var(--warn-soft); } .btag.b8 { --bt: var(--bad); --bt-bg: var(--bad-soft); }
 .bico { flex: none; fill: currentColor; vertical-align: -2px; } .bico .off { opacity: .28; }
-.mw .bico { margin-left: 6px; color: var(--muted); }
+.mi > .pick .mw { display: flex; flex-wrap: wrap; align-items: center; gap: 0 6px; } .mw .bico { margin-left: auto; color: var(--muted); }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .mon { --m-ink: #0c1f1b; --egg: #cfc7ad; --egg-ln: #8f8567; } }
 :root[data-theme="dark"] .mon { --m-ink: #0c1f1b; --egg: #cfc7ad; --egg-ln: #8f8567; }
 .menu.mons .mi > .pick { grid-template-columns: auto auto minmax(0, 1fr) auto; }
