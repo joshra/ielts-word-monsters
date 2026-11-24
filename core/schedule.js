@@ -44,8 +44,14 @@ export function mergeRating(dayMap, date, rating) {
 
 export const MIN_EGGS = 4;
 
+/** 依日期打散順序：同一天、同一批字每次排出來都一樣，換一天就換一種排法。 */
+export function shuffleFor(list, date) {
+  const key = (w) => { let h = 2166136261; for (const ch of date + "|" + w) h = Math.imul(h ^ ch.codePointAt(0), 16777619); return h >>> 0; };
+  return list.map((w) => [key(w), w]).sort((a, b) => a[0] - b[0] || (a[1] < b[1] ? -1 : 1)).map((x) => x[1]);
+}
+
 /**
- * 沒有快照時排出當日十詞：到期詞先佔名額（越早到期越優先），剩下的名額依循環詞序補新字。排出來的順序是新字在前、複習在後。
+ * 沒有快照時排出當日十詞：到期詞先佔名額（越早到期越優先），剩下的名額依循環詞序補新字。排出來的順序是新字在前、複習在後，兩段各自依日期打散。
  * hatched: { 詞: 孵化日 }。有給的話，已孵化的字最多佔 size - minEggs 個名額，確保當天至少有 minEggs 顆蛋；沒孵化的字不夠時才用已孵化的補滿。
  */
 export function buildMenu({ date, groups, startDate, history, hatched = null, size = 10, minEggs = MIN_EGGS }) {
@@ -73,7 +79,7 @@ export function buildMenu({ date, groups, startDate, history, hatched = null, si
     if (picked.size >= size) break;
     if (!picked.has(w)) { picked.add(w); fresh.push(w); }
   }
-  return [...fresh, ...review];
+  return [...shuffleFor(fresh, date), ...shuffleFor(review, date)];
 }
 
 /** 換字候選：依當日循環詞序，取第一個不在菜單、也沒被換掉過的詞。only 是硬條件、prefer 是偏好，都找不到符合的才逐步放寬。沒有則回傳 null。 */
