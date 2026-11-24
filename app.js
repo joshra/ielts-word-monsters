@@ -1,5 +1,5 @@
 import { localToday, isValidDate, addDays } from "./core/dates.js";
-import { groupIndex, buildMenu, swapCandidate, groupsByBand, isValidMenu, mergeRating, posMod, nextReviewDate } from "./core/schedule.js";
+import { groupIndex, buildMenu, swapCandidate, MIN_EGGS, groupsByBand, isValidMenu, mergeRating, posMod, nextReviewDate } from "./core/schedule.js";
 import { checkSubword, hintFor, longest, checkRecall, GAME_REASONS } from "./core/game.js";
 import { STEPS, STEP_IDS, TEXT_STEPS, RATINGS, MAX_TEXT, doneCount, isWordComplete, nextPendingStep, nextStep, isProtected, canRate } from "./core/training.js";
 import { deepMerge } from "./core/merge.js";
@@ -150,7 +150,7 @@ async function openDate(date, pinned) {
   if (data && isValidMenu(data.wordIds, known())) {
     S.day = data; S.daySaved = true;
   } else {
-    const wordIds = buildMenu({ date, groups: S.course.advanced, startDate: S.course.startDate, history: S.schedule.h });
+    const wordIds = buildMenu({ date, groups: S.course.advanced, startDate: S.course.startDate, history: S.schedule.h, hatched: S.game.hatched });
     S.day = { date, level: "advanced", wordIds, swapped: [], training: {}, game: {} };
     S.daySaved = false;
   }
@@ -437,7 +437,8 @@ function select(word, step) {
 async function swapWord(w) {
   if (isProtected(tr(w), S.day.game?.[w])) return toast(L("這個字已經有練習紀錄，不能換掉。", "This word already has practice saved, so it can't be swapped."));
   const harder = Math.min((S.words[w]?.band ?? 7) + 1, 8); // 換字是因為太簡單，先找更難的；已經是最高級就找同級
-  const cand = swapCandidate({ date: S.date, groups: S.course.advanced, startDate: S.course.startDate, menu: S.day.wordIds, excluded: S.day.swapped || [], prefer: (x) => (S.words[x]?.band ?? 7) >= harder });
+  const keepEgg = !S.game.hatched[w] && S.day.wordIds.filter((x) => !S.game.hatched[x]).length <= MIN_EGGS; // 換掉的是蛋、而且蛋只剩四顆時，換進來的也要是蛋
+  const cand = swapCandidate({ date: S.date, groups: S.course.advanced, startDate: S.course.startDate, menu: S.day.wordIds, excluded: S.day.swapped || [], prefer: (x) => (S.words[x]?.band ?? 7) >= harder, only: keepEgg ? (x) => !S.game.hatched[x] : null });
   if (!cand) return toast(L("沒有可以換的字了。", "There are no other words to swap in."));
   const wordIds = S.day.wordIds.map((x) => (x === w ? cand : x));
   const swapped = [...(S.day.swapped || []), w];

@@ -42,8 +42,13 @@ export function mergeRating(dayMap, date, rating) {
   return prev === undefined || prev === null ? rating : Math.min(prev, rating);
 }
 
-/** 沒有快照時排出當日十詞：到期詞先佔名額（越早到期越優先），剩下的名額依循環詞序補新字。排出來的順序是新字在前、複習在後。 */
-export function buildMenu({ date, groups, startDate, history, size = 10 }) {
+export const MIN_EGGS = 4;
+
+/**
+ * 沒有快照時排出當日十詞：到期詞先佔名額（越早到期越優先），剩下的名額依循環詞序補新字。排出來的順序是新字在前、複習在後。
+ * hatched: { 詞: 孵化日 }。有給的話，已孵化的字最多佔 size - minEggs 個名額，確保當天至少有 minEggs 顆蛋；沒孵化的字不夠時才用已孵化的補滿。
+ */
+export function buildMenu({ date, groups, startDate, history, hatched = null, size = 10, minEggs = MIN_EGGS }) {
   const pool = cyclicPool(groups, groupIndex(date, startDate, groups.length));
   const rank = new Map(pool.map((w, i) => [w, i]));
   const due = [];
@@ -52,20 +57,32 @@ export function buildMenu({ date, groups, startDate, history, size = 10 }) {
     if (d && d <= date) due.push([d, rank.get(w), w]);
   }
   due.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : a[1] - b[1]));
-  const review = due.slice(0, size).map((x) => x[2]);
-  const fresh = [];
-  for (const w of pool) {
-    if (fresh.length + review.length >= size) break;
-    if (!review.includes(w)) fresh.push(w);
+  const isHatched = (w) => Boolean(hatched?.[w]);
+  const maxHatched = hatched ? Math.max(size - minEggs, 0) : size;
+  const picked = new Set();
+  let nHatched = 0;
+  const take = (w, list) => {
+    if (picked.size >= size || picked.has(w)) return;
+    if (isHatched(w)) { if (nHatched >= maxHatched) return; nHatched++; }
+    picked.add(w); list.push(w);
+  };
+  const review = [], fresh = [];
+  for (const [, , w] of due) take(w, review);
+  for (const w of pool) take(w, fresh);
+  for (const w of pool) { // 蛋不夠四顆時，用已孵化的字補滿十個
+    if (picked.size >= size) break;
+    if (!picked.has(w)) { picked.add(w); fresh.push(w); }
   }
   return [...fresh, ...review];
 }
 
-/** 換字候選：依當日循環詞序，取第一個不在菜單、也沒被換掉過的詞。有 prefer 時先找符合的，找不到才退回一般順序。沒有則回傳 null。 */
-export function swapCandidate({ date, groups, startDate, menu, excluded = [], prefer = null }) {
+/** 換字候選：依當日循環詞序，取第一個不在菜單、也沒被換掉過的詞。only 是硬條件、prefer 是偏好，都找不到符合的才逐步放寬。沒有則回傳 null。 */
+export function swapCandidate({ date, groups, startDate, menu, excluded = [], prefer = null, only = null }) {
   const pool = cyclicPool(groups, groupIndex(date, startDate, groups.length));
   const ok = (w) => !menu.includes(w) && !excluded.includes(w);
-  return (prefer ? pool.find((w) => ok(w) && prefer(w)) : null) ?? pool.find(ok) ?? null;
+  const tries = [only && prefer ? (w) => only(w) && prefer(w) : null, only, prefer, () => true].filter(Boolean);
+  for (const t of tries) { const hit = pool.find((w) => ok(w) && t(w)); if (hit) return hit; }
+  return null;
 }
 
 /** 由淺入深的課表：整個詞池依難度穩定排序後重新切組，同難度內維持原本的順序。沒有難度的字當作中間級。 */
